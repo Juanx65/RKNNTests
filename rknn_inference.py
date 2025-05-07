@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from rknn.api import RKNN
+import time
 
 
 IMG_SIZE = (640, 640)
@@ -77,14 +78,36 @@ def decode_output(original_image, outputs):
              round((box[0] + box[2]) * scale_x),
             round((box[1] + box[3]) * scale_y),
         )
-    cv2.imwrite('resultado.jpg', original_image)
-    return detections
+    #cv2.imwrite('resultado.jpg', original_image)
+    return original_image, detections
 
 def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     label = f"{CLASSES[class_id]} ({confidence:.2f})"
     color = colors[class_id]
     cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+   
+def inferenceFunc(rknn, frame):
+    start = time.time()
+    original_image = frame.copy()
+    # Preprocesamiento: redimensionar, convertir a RGB y escalar
+    img_resized = cv2.resize(original_image, IMG_SIZE)
+    img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+    img_input = np.expand_dims(img_rgb, axis=0).astype(np.float32)
+
+    # Inferencia
+    outputs = rknn.inference(inputs=[img_input])
+    if outputs is None or outputs[0] is None:
+        print("❌ Inference failed")
+        return frame
+        
+    end = time.time()
+    fps = 1.0 / (end - start)
+    cv2.putText(original_image, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    # Postprocesamiento con tu función personalizada
+    img_out, detections = decode_output(original_image, outputs[0])
+
+    return img_out
 
 def main():
     model_path = 'yolov8n.rknn'
@@ -99,7 +122,7 @@ def main():
     img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
 
     outputs = rknn.inference(inputs=[img_rgb])
-    detections = decode_output(img, outputs[0])
+    img_out, detections = decode_output(img, outputs[0])
 
     rknn.release()
     print(f'Detecciones: {len(detections)}')
