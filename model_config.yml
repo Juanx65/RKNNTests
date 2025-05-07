@@ -1,7 +1,7 @@
 models:
-    name: yolov5nu             # 模型输出名称
+    name: yolov8m             # 模型输出名称
     platform: onnx            # 原始模型使用的框架
-    model_file_path: weights/yolov5nu.onnx # 原模型路径
+    model_file_path: weights/yolov8m.onnx # 原模型路径
     subgraphs:                   # 描述输入输出shape等信息
       input_size_list:
         - 1, 3, 640, 640

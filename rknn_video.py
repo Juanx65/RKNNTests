@@ -10,7 +10,7 @@ NMS_THRESH = 0.45
 
 
 def main():
-    model_path = 'weights/yolov8n.rknn'
+    model_path = 'weights/yolov8m.rknn'
     video_path = 'datasets/autos.mp4'
     output_path = 'datasets/resultado_video.avi'
 

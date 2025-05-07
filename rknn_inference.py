@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from rknn.api import RKNN
 import time
 
 
@@ -88,6 +87,14 @@ def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
    
 def inferenceFunc(rknn, frame):
+    try:
+        assert frame is not None
+        assert len(frame.shape) == 3
+        # continúa con el preprocesamiento
+    except Exception as e:
+        print("Error en inferenceFunc:", e)
+        return np.zeros((640, 640, 3), dtype=np.uint8)
+
     start = time.time()
     original_image = frame.copy()
     # Preprocesamiento: redimensionar, convertir a RGB y escalar
@@ -108,25 +115,3 @@ def inferenceFunc(rknn, frame):
     img_out, detections = decode_output(original_image, outputs[0])
 
     return img_out
-
-def main():
-    model_path = 'yolov8n.rknn'
-    image_path = 'bus.jpg'
-
-    rknn = RKNN()
-    rknn.load_rknn(model_path)
-    rknn.init_runtime(target='rk3588s')
-
-    img = cv2.imread(image_path)
-    img_resized = cv2.resize(img, IMG_SIZE)
-    img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
-
-    outputs = rknn.inference(inputs=[img_rgb])
-    img_out, detections = decode_output(img, outputs[0])
-
-    rknn.release()
-    print(f'Detecciones: {len(detections)}')
-
-
-if __name__ == '__main__':
-    main()
