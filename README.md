@@ -1,7 +1,3 @@
-Aquí tienes una versión mejorada del `README.md`, con correcciones de estilo, ortografía, claridad y formato:
-
----
-
 # Conversión de modelo YOLO (ONNX) a RKNN con RKNN Toolkit 2
 
 Este repositorio permite convertir un modelo YOLO en formato ONNX al formato RKNN utilizando RKNN Toolkit 2, especialmente optimizado para funcionar en dispositivos con SoC RK3588S, como la Orange Pi 5 Pro.
@@ -53,8 +49,4 @@ pip install -r requirements.txt
 * Código multihilo adaptado de: [leafqycc/rknn-multi-threaded](https://github.com/leafqycc/rknn-multi-threaded)
 * Toolkit oficial de conversión RKNN: [airockchip/rknn-toolkit2](https://github.com/airockchip/rknn-toolkit2/)
 * SO usado en la orange pi 5 pro: [Joshua-Riek/ubuntu-rockchip](https://github.com/Joshua-Riek/ubuntu-rockchip)
-
----
-
-¿Quieres que también cree el archivo `requirements.txt` o algún ejemplo de `model_config.yml`?
 
