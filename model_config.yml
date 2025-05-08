@@ -12,3 +12,6 @@ models:
       #mean_values: [123.675, 116.28, 103.53]  # rknn.config的mean_values参数
       #std_values: [58.395, 58.395, 58.395]    # rknn.config的std_values参数
       quant_img_RGB2BGR: False     # 不进行RGB2BGR转换
+      #quantized_dtype: asymmetric_quantized-8 # 量化类型
+      #quantized_algorithm: normal  # 量化算法
+      #quantized_method: channel    # 量化方法
