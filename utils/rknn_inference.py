@@ -17,6 +17,8 @@ CLASSES = [
     'scissors', 'teddy bear', 'hair drier', 'toothbrush'
 ]
 
+DARKNET = False
+
 colors = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 
 def decode_output(original_image, outputs):
@@ -83,7 +85,19 @@ def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     color = colors[class_id]
     cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-   
+
+def convert_darknet_to_yolov8_format(output):
+    """
+    Convierte la salida cruda de forma (1, 3, 80, 80, 85) a (1, 85, 19200)
+    y luego a (1, 85, 8400) si fuera necesario (ajusta según tu modelo)
+    """
+    # output: (1, 3, 80, 80, 85)
+    output = np.squeeze(output, axis=0)  # (3, 80, 80, 85)
+    output = output.transpose(0, 2, 1, 3)  # (3, 80, 80, 85) → (3, 80, 80, 85)
+    output = output.reshape(-1, 85)       # (3*80*80, 85) → (19200, 85)
+    output = np.expand_dims(output.transpose(1, 0), axis=0)  # (1, 85, 19200)
+    return output
+
 def inferenceFunc(rknn, frame):
 
     original_image = frame.copy()
@@ -97,7 +111,11 @@ def inferenceFunc(rknn, frame):
     if outputs is None or outputs[0] is None:
         print("❌ Inference failed")
         return frame
-    
-    img_out, detections = decode_output(original_image, outputs[0])
+
+    if(DARKNET):
+        ready_output = convert_darknet_to_yolov8_format(outputs[0])
+    else:
+        ready_output = outputs[0]
+    img_out, detections = decode_output(original_image, ready_output)
 
     return img_out
