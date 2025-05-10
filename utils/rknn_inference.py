@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+from scipy.spatial import distance as dist
+import numpy as np
 
 IMG_SIZE = (640, 640)
 CONF_THRESH = 0.3
@@ -18,32 +20,24 @@ CLASSES = [
 ]
 
 DARKNET = False
-
 colors = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 
 def decode_output(original_image, outputs):
-
-    outputs = outputs.transpose(0, 2, 1)  # cambia de (1, 84, 8400) a (1, 8400, 84)
+    outputs = outputs.transpose(0, 2, 1)  # (1, 84, 8400) -> (1, 8400, 84)
     rows = outputs.shape[1]
-
-    boxes = []
-    scores = []
-    class_ids = []
+    boxes, scores, class_ids = [], [], []
 
     h, w = original_image.shape[:2]
     scale_x = w / IMG_SIZE[0]
     scale_y = h / IMG_SIZE[1]
 
-    scale = 1
-
-    # Iterate through output to collect bounding boxes, confidence scores, and class IDs
     for i in range(rows):
         classes_scores = outputs[0][i][4:]
-        (minScore, maxScore, minClassLoc, (x, maxClassIndex)) = cv2.minMaxLoc(classes_scores)
+        _, maxScore, _, (x, maxClassIndex) = cv2.minMaxLoc(classes_scores)
         if maxScore >= CONF_THRESH:
             box = [
-                outputs[0][i][0] - (0.5 * outputs[0][i][2]),
-                outputs[0][i][1] - (0.5 * outputs[0][i][3]),
+                outputs[0][i][0] - 0.5 * outputs[0][i][2],
+                outputs[0][i][1] - 0.5 * outputs[0][i][3],
                 outputs[0][i][2],
                 outputs[0][i][3],
             ]
@@ -51,12 +45,9 @@ def decode_output(original_image, outputs):
             scores.append(maxScore)
             class_ids.append(maxClassIndex)
 
-    # Apply NMS (Non-maximum suppression)
     result_boxes = cv2.dnn.NMSBoxes(boxes, scores, CONF_THRESH, NMS_THRESH, 0.5)
-
     detections = []
 
-    # Iterate through NMS results to draw bounding boxes and labels
     for i in range(len(result_boxes)):
         index = result_boxes[i]
         box = boxes[index]
@@ -65,7 +56,13 @@ def decode_output(original_image, outputs):
             "class_name": CLASSES[class_ids[index]],
             "confidence": scores[index],
             "box": box,
-            "scale": scale,
+            "scaled_box": [
+                round(box[0] * scale_x),
+                round(box[1] * scale_y),
+                round(box[2] * scale_x),
+                round(box[3] * scale_y),
+            ],
+            "scale": 1,
         }
         detections.append(detection)
         draw_bounding_box(
@@ -74,10 +71,9 @@ def decode_output(original_image, outputs):
             scores[index],
             round(box[0] * scale_x),
             round(box[1] * scale_y),
-             round((box[0] + box[2]) * scale_x),
+            round((box[0] + box[2]) * scale_x),
             round((box[1] + box[3]) * scale_y),
         )
-    #cv2.imwrite('resultado.jpg', original_image)
     return original_image, detections
 
 def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
@@ -85,37 +81,100 @@ def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     color = colors[class_id]
     cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    
+class CentroidTracker:
+    def __init__(self, max_disappeared=5):
+        self.objects = {}  # ID -> centroid
+        self.disappeared = {}  # ID -> #frames sin detectar
+        self.next_object_id = 0
+        self.max_disappeared = max_disappeared
+
+    def register(self, centroid):
+        self.objects[self.next_object_id] = centroid
+        self.disappeared[self.next_object_id] = 0
+        self.next_object_id += 1
+
+    def deregister(self, object_id):
+        del self.objects[object_id]
+        del self.disappeared[object_id]
+
+    def update(self, detections):
+        input_centroids = [self._get_centroid(det["scaled_box"]) for det in detections]
+
+        if len(input_centroids) == 0:
+            # Si no hay detecciones, aumentar desaparecidos
+            for object_id in list(self.disappeared.keys()):
+                self.disappeared[object_id] += 1
+                if self.disappeared[object_id] > self.max_disappeared:
+                    self.deregister(object_id)
+            return self.objects
+
+        if len(self.objects) == 0:
+            for centroid in input_centroids:
+                self.register(centroid)
+        else:
+            object_ids = list(self.objects.keys())
+            object_centroids = list(self.objects.values())
+
+            D = dist.cdist(np.array(object_centroids), np.array(input_centroids))
+            rows = D.min(axis=1).argsort()
+            cols = D.argmin(axis=1)[rows]
+
+            used_rows = set()
+            used_cols = set()
+
+            for (row, col) in zip(rows, cols):
+                if row in used_rows or col in used_cols:
+                    continue
+
+                object_id = object_ids[row]
+                self.objects[object_id] = input_centroids[col]
+                self.disappeared[object_id] = 0
+
+                used_rows.add(row)
+                used_cols.add(col)
+
+            # Objetos no asignados
+            unused_rows = set(range(0, D.shape[0])).difference(used_rows)
+            unused_cols = set(range(0, D.shape[1])).difference(used_cols)
+
+            for row in unused_rows:
+                object_id = object_ids[row]
+                self.disappeared[object_id] += 1
+                if self.disappeared[object_id] > self.max_disappeared:
+                    self.deregister(object_id)
+
+            for col in unused_cols:
+                self.register(input_centroids[col])
+
+        return self.objects
+
+    def _get_centroid(self, box):
+        x, y, w, h = box
+        cx = x + w / 2
+        cy = y + h / 2
+        return (int(cx), int(cy))
 
 def convert_darknet_to_yolov8_format(output):
-    """
-    Convierte la salida cruda de forma (1, 3, 80, 80, 85) a (1, 85, 19200)
-    y luego a (1, 85, 8400) si fuera necesario (ajusta según tu modelo)
-    """
-    # output: (1, 3, 80, 80, 85)
-    output = np.squeeze(output, axis=0)  # (3, 80, 80, 85)
-    output = output.transpose(0, 2, 1, 3)  # (3, 80, 80, 85) → (3, 80, 80, 85)
-    output = output.reshape(-1, 85)       # (3*80*80, 85) → (19200, 85)
-    output = np.expand_dims(output.transpose(1, 0), axis=0)  # (1, 85, 19200)
+    output = np.squeeze(output, axis=0)
+    output = output.transpose(0, 2, 1, 3)
+    output = output.reshape(-1, 85)
+    output = np.expand_dims(output.transpose(1, 0), axis=0)
     return output
 
 def inferenceFunc(rknn, frame):
-
     original_image = frame.copy()
-    # Preprocesamiento: redimensionar, convertir a RGB y escalar
     img_resized = cv2.resize(original_image, IMG_SIZE)
     img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
     img_input = np.expand_dims(img_rgb, axis=0).astype(np.float32)
 
-    # Inferencia
     outputs = rknn.inference(inputs=[img_input])
     if outputs is None or outputs[0] is None:
         print("❌ Inference failed")
-        return frame
+        return frame, []
 
-    if(DARKNET):
+    if DARKNET:
         ready_output = convert_darknet_to_yolov8_format(outputs[0])
     else:
         ready_output = outputs[0]
-    img_out, detections = decode_output(original_image, ready_output)
-
-    return img_out
+    return decode_output(original_image, ready_output)

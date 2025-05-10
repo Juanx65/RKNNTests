@@ -1,16 +1,19 @@
 import cv2
 import numpy as np
 from utils.rknnpool import rknnPoolExecutor
-from utils.rknn_inference import inferenceFunc
+from utils.rknn_inference import inferenceFunc, CentroidTracker
 import time
 from collections import deque
 
 IMG_SIZE = (640, 640)
 TPEs = 3  # Máximo 3 núcleos NPU en RK3588S
 
+tracker = CentroidTracker()
+skip_frames = 1
+
 def main():
-    model_path = 'weights/yolov8n.rknn'
-    video_path = 'datasets/autos_short.mp4'
+    model_path = 'weights/yolo11n.rknn'
+    video_path = 'datasets/autos.mp4'
     output_path = 'results/result_multi.mp4'
     
     pool = rknnPoolExecutor(
@@ -55,9 +58,22 @@ def main():
             pool.put(frame)
 
         start = time.time()
-        processed_frame, flag = pool.get()
-        end = time.time()
 
+        if frame_count % skip_frames == 0:
+            #processed_frame, detections = inferenceFunc(rknn, frame)
+            (processed_frame, detections), flag = pool.get()
+            tracked_objects = tracker.update(detections)
+        else:
+            processed_frame = frame.copy()
+            tracked_objects = tracker.objects  # mantener los últimos objetos detectados
+
+        # Dibujar centroides e IDs
+        for object_id, centroid in tracked_objects.items():
+            cv2.circle(processed_frame, centroid, 4, (0, 255, 0), -1)
+            cv2.putText(processed_frame, f"ID {object_id}", (centroid[0] - 10, centroid[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+        end = time.time()
         elapsed = end - start
         recent_times.append(elapsed)
         frame_count += 1
