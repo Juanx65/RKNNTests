@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 from scipy.spatial import distance as dist
 import numpy as np
-
-from collections import deque 
+import math
+from collections import deque, defaultdict
 
 IMG_SIZE = (640, 640)
 CONF_THRESH = 0.3
@@ -21,7 +21,6 @@ CLASSES = [
     'scissors', 'teddy bear', 'hair drier', 'toothbrush'
 ]
 
-DARKNET = False
 colors = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 
 def decode_output(original_image, outputs):
@@ -76,6 +75,101 @@ def decode_output(original_image, outputs):
             round((box[0] + box[2]) * scale_x),
             round((box[1] + box[3]) * scale_y),
         )
+    return original_image, detections
+
+def decode_darknet_outputs(original_image, outputs_list):
+    """
+    Decodifica las salidas crudas de Darknet (lista de tres mapas de predicción)
+    y devuelve la imagen anotada y la lista de detecciones sin cajas duplicadas.
+    Se aplica NMS global para asegurarse de que quede una sola caja por objeto.
+    """
+    h, w = original_image.shape[:2]
+    scale_x = w / IMG_SIZE[0]
+    scale_y = h / IMG_SIZE[1]
+
+    all_anchors = [
+        [(10, 13), (16, 30), (33, 23)],
+        [(30, 61), (62, 45), (59, 119)],
+        [(116, 90), (156, 198), (373, 326)],
+    ]
+    all_strides = [8, 16, 32]
+
+    boxes, scores, class_ids = [], [], []
+
+    # 1) Extraer todas las cajas candidatas
+    for output, anchors, stride in zip(outputs_list, all_anchors, all_strides):
+        out = output[0]  # forma (num_anchors, gh, gw, 85)
+        num_anchors, gh, gw, _ = out.shape
+
+        for a in range(num_anchors):
+            anchor_w, anchor_h = anchors[a]
+            for y in range(gh):
+                for x in range(gw):
+                    p = out[a, y, x]
+                    # confidencia de objeto
+                    obj_conf = 1 / (1 + math.exp(-p[4]))
+                    if obj_conf < CONF_THRESH:
+                        continue
+                    # probabilidad de clase
+                    class_probs = 1 / (1 + np.exp(-p[5:]))
+                    class_id = int(np.argmax(class_probs))
+                    conf = obj_conf * float(class_probs[class_id])
+
+                    # decodificar centro y tamaño
+                    bx = (1 / (1 + math.exp(-p[0])) + x) * stride
+                    by = (1 / (1 + math.exp(-p[1])) + y) * stride
+                    bw = math.exp(p[2]) * anchor_w
+                    bh = math.exp(p[3]) * anchor_h
+
+                    # convertir a (x, y, w, h) con esquina superior izquierda
+                    x1 = bx - bw / 2
+                    y1 = by - bh / 2
+
+                    boxes.append([int(x1), int(y1), int(bw), int(bh)])
+                    scores.append(conf)
+                    class_ids.append(class_id)
+
+    # 2) Aplicar NMS global para eliminar duplicados
+    idxs = cv2.dnn.NMSBoxes(boxes, scores, CONF_THRESH, NMS_THRESH)
+    # idxs puede ser [[i], [j], ...] o [i, j, ...]
+    kept = []
+    for v in idxs:
+        if isinstance(v, (list, tuple, np.ndarray)):
+            kept.append(int(v[0]))
+        else:
+            kept.append(int(v))
+
+    # 3) Construir detecciones finales y dibujar
+    detections = []
+    for i in kept:
+        x, y, bw, bh = boxes[i]
+        # escala al tamaño original
+        xs = round(x * scale_x)
+        ys = round(y * scale_y)
+        ws = round(bw * scale_x)
+        hs = round(bh * scale_y)
+
+        det = {
+            "class_id": class_ids[i],
+            "class_name": CLASSES[class_ids[i]],
+            "confidence": scores[i],
+            "scaled_box": [xs, ys, ws, hs],
+            "box": [x, y, bw, bh],
+            "scale": 1,
+        }
+        detections.append(det)
+
+        # dibujar caja escalada
+        draw_bounding_box(
+            original_image,
+            det["class_id"],
+            det["confidence"],
+            xs,
+            ys,
+            xs + ws,
+            ys + hs,
+        )
+
     return original_image, detections
 
 def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
@@ -196,13 +290,6 @@ class CentroidTracker:
         cy = y + h / 2
         return (int(cx), int(cy))
 
-def convert_darknet_to_yolov8_format(output):
-    output = np.squeeze(output, axis=0)
-    output = output.transpose(0, 2, 1, 3)
-    output = output.reshape(-1, 85)
-    output = np.expand_dims(output.transpose(1, 0), axis=0)
-    return output
-
 def inferenceFunc(rknn, frame):
     original_image = frame.copy()
     img_resized = cv2.resize(original_image, IMG_SIZE)
@@ -214,8 +301,9 @@ def inferenceFunc(rknn, frame):
         print("❌ Inference failed")
         return frame, []
 
-    if DARKNET:
-        ready_output = convert_darknet_to_yolov8_format(outputs[0])
-    else:
-        ready_output = outputs[0]
-    return decode_output(original_image, ready_output)
+    # Si vienen varias salidas (darknet heads) o un tensor 4D → usar decode_darknet_outputs
+    if len(outputs) > 1 or outputs[0].ndim == 4:
+        return decode_darknet_outputs(original_image, outputs)
+
+    # Si es una única salida 3D (e.g. yolov8 / yolov11) → usar decode_outputs
+    return decode_output(original_image, outputs[0])
