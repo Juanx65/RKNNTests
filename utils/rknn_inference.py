@@ -3,6 +3,8 @@ import numpy as np
 from scipy.spatial import distance as dist
 import numpy as np
 
+from collections import deque 
+
 IMG_SIZE = (640, 640)
 CONF_THRESH = 0.3
 NMS_THRESH = 0.45
@@ -83,26 +85,30 @@ def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     
 class CentroidTracker:
-    def __init__(self, max_disappeared=5):
-        self.objects = {}  # ID -> centroid
-        self.disappeared = {}  # ID -> #frames sin detectar
+    def __init__(self, max_disappeared=5, max_trace=30):
+        self.objects = {}
+        self.disappeared = {}
+        self.tracks = {}  # ID -> deque de centroides
         self.next_object_id = 0
         self.max_disappeared = max_disappeared
+        self.max_trace = max_trace
 
     def register(self, centroid):
         self.objects[self.next_object_id] = centroid
         self.disappeared[self.next_object_id] = 0
+        self.tracks[self.next_object_id] = deque(maxlen=self.max_trace)
+        self.tracks[self.next_object_id].append(centroid)
         self.next_object_id += 1
 
     def deregister(self, object_id):
         del self.objects[object_id]
         del self.disappeared[object_id]
+        del self.tracks[object_id]
 
     def update(self, detections):
         input_centroids = [self._get_centroid(det["scaled_box"]) for det in detections]
 
         if len(input_centroids) == 0:
-            # Si no hay detecciones, aumentar desaparecidos
             for object_id in list(self.disappeared.keys()):
                 self.disappeared[object_id] += 1
                 if self.disappeared[object_id] > self.max_disappeared:
@@ -130,11 +136,11 @@ class CentroidTracker:
                 object_id = object_ids[row]
                 self.objects[object_id] = input_centroids[col]
                 self.disappeared[object_id] = 0
+                self.tracks[object_id].append(input_centroids[col])
 
                 used_rows.add(row)
                 used_cols.add(col)
 
-            # Objetos no asignados
             unused_rows = set(range(0, D.shape[0])).difference(used_rows)
             unused_cols = set(range(0, D.shape[1])).difference(used_cols)
 
