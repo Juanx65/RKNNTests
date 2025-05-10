@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial import distance as dist
 import numpy as np
 import math
-from collections import deque, defaultdict
+from collections import deque
 
 IMG_SIZE = (640, 640)
 CONF_THRESH = 0.3
