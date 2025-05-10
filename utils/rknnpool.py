@@ -62,7 +62,7 @@ class rknnPoolExecutor:
             result = self.output_queue.get(timeout=1)  # espera hasta 1 segundo
             return result, True
         except:
-            return None, False
+            return (None,None), False
 
     def release(self):
         for _ in self.workers:

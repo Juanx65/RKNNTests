@@ -133,11 +133,13 @@ class CentroidTracker:
     def update(self, detections):
         input_centroids = []
         input_classes = []
+
+        if not detections:  # Esto cubre tanto None como listas vacías
+            return {}
+        
         for det in detections:
             input_centroids.append(self._get_centroid(det["scaled_box"]))
             input_classes.append(det["class_id"])
-
-
 
         if len(input_centroids) == 0:
             for object_id in list(self.disappeared.keys()):

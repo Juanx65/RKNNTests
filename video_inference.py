@@ -57,9 +57,7 @@ def main():
             avg_fps_recent = 30 / sum(recent_times)
             print("FPS ave: ", avg_fps_recent)
 
-        cv2.putText(processed_frame, f"FPS ave: {avg_fps_recent:.2f}",
-                    (processed_frame.shape[1] - cv2.getTextSize(f"FPS ave: {avg_fps_recent:.2f}", cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0][0] - 10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.putText(processed_frame, f"FPS ave: {avg_fps_recent:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
         # out.write(processed_frame)  # Guardar si quieres
         cv2.imshow('RKNN Video Inference', processed_frame)
