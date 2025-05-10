@@ -83,30 +83,45 @@ def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     color = colors[class_id]
     cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-    
+
 class CentroidTracker:
     def __init__(self, max_disappeared=5, max_trace=30):
         self.objects = {}
         self.disappeared = {}
-        self.tracks = {}  # ID -> deque de centroides
+        self.tracks = {}
+        self.colors = {}  # ID -> color
         self.next_object_id = 0
         self.max_disappeared = max_disappeared
         self.max_trace = max_trace
 
-    def register(self, centroid):
+    def register(self, centroid, class_id):
         self.objects[self.next_object_id] = centroid
         self.disappeared[self.next_object_id] = 0
         self.tracks[self.next_object_id] = deque(maxlen=self.max_trace)
         self.tracks[self.next_object_id].append(centroid)
+
+        # Usar el color de la clase correspondiente
+        self.colors[self.next_object_id] = tuple(map(int, colors[class_id]))
+
         self.next_object_id += 1
+
+
 
     def deregister(self, object_id):
         del self.objects[object_id]
         del self.disappeared[object_id]
         del self.tracks[object_id]
+        del self.colors[object_id]
+
 
     def update(self, detections):
-        input_centroids = [self._get_centroid(det["scaled_box"]) for det in detections]
+        input_centroids = []
+        input_classes = []
+        for det in detections:
+            input_centroids.append(self._get_centroid(det["scaled_box"]))
+            input_classes.append(det["class_id"])
+
+
 
         if len(input_centroids) == 0:
             for object_id in list(self.disappeared.keys()):
@@ -116,8 +131,9 @@ class CentroidTracker:
             return self.objects
 
         if len(self.objects) == 0:
-            for centroid in input_centroids:
-                self.register(centroid)
+            for centroid, class_id in zip(input_centroids, input_classes):
+                self.register(centroid, class_id)
+
         else:
             object_ids = list(self.objects.keys())
             object_centroids = list(self.objects.values())
@@ -151,7 +167,8 @@ class CentroidTracker:
                     self.deregister(object_id)
 
             for col in unused_cols:
-                self.register(input_centroids[col])
+                self.register(input_centroids[col], input_classes[col])
+
 
         return self.objects
 
