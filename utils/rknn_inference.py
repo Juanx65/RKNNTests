@@ -84,6 +84,22 @@ def draw_bounding_box(img, class_id, confidence, x, y, x_plus_w, y_plus_h):
     cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
     cv2.putText(img, label, (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
+def draw_tracks(frame, tracked_objects, tracker):
+    for object_id, centroid in tracked_objects.items():
+        color = tracker.colors[object_id]
+
+        # Dibujar trayectoria
+        pts = tracker.tracks[object_id]
+        for i in range(1, len(pts)):
+            if pts[i - 1] is None or pts[i] is None:
+                continue
+            cv2.line(frame, pts[i - 1], pts[i], color, 2)
+
+        # Círculo e ID
+        cv2.circle(frame, centroid, 4, color, -1)
+        cv2.putText(frame, f"ID {object_id}", (centroid[0] - 10, centroid[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
 class CentroidTracker:
     def __init__(self, max_disappeared=5, max_trace=30):
         self.objects = {}

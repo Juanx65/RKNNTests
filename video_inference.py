@@ -2,7 +2,8 @@ import cv2
 import numpy as np
 import time
 from rknn.api import RKNN
-from utils.rknn_inference import inferenceFunc, CentroidTracker
+from utils.rknn_inference import inferenceFunc, CentroidTracker, draw_tracks
+
 from collections import deque
 
 IMG_SIZE = (640, 640)
@@ -12,7 +13,7 @@ skip_frames = 1
 
 def main():
     model_path = 'weights/yolo11n.rknn'
-    video_path = 'datasets/720p60hz.mp4'
+    video_path = 'datasets/autos_short.mp4'
     output_path = 'results/resultado.mp4'
 
     rknn = RKNN()
@@ -45,22 +46,7 @@ def main():
             processed_frame = frame.copy()
             tracked_objects = tracker.objects  # mantener los últimos objetos detectados
 
-        # Dibujar trayectoria
-        for object_id, centroid in tracked_objects.items():
-            color = tracker.colors[object_id]
-
-            # Dibujar trayectoria
-            pts = tracker.tracks[object_id]
-            for i in range(1, len(pts)):
-                if pts[i - 1] is None or pts[i] is None:
-                    continue
-                cv2.line(processed_frame, pts[i - 1], pts[i], color, 2)
-
-            # Círculo e ID
-            cv2.circle(processed_frame, centroid, 4, color, -1)
-            cv2.putText(processed_frame, f"ID {object_id}", (centroid[0] - 10, centroid[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
+        draw_tracks(processed_frame, tracked_objects, tracker)
 
         end = time.time()
         elapsed = end - start
